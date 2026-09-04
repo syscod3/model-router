@@ -16,12 +16,12 @@ GitHub Issues are disabled on this fork, so this map uses the repository-local M
 
 ## Decisions so far
 
-<!-- Closed decisions are listed here as one-line links. -->
+- [Verify Hermes provider-switching and error-hook seam](tickets/verify-hermes-routing-seam.md) — Hermes has no native per-turn route-selection hook; the adapter must use `AIAgent.switch_model(...)` until a supported override exists. See [research](../../../docs/research/hermes-routing-seam.md).
+- [Discover the usable provider and model contract](tickets/discover-provider-model-contract.md) — use canonical provider slugs; bootstrap model names remain configurable placeholders until Hermes discovery returns account-usable IDs. See [research](../../../research/provider-model-contract.md).
+- [Establish the baseline regression contract](tickets/establish-baseline-regression-contract.md) — five focused tests now protect classification fast paths, explicit tier selection, config normalization, pins, and tool-error escalation before refactoring.
 
 ## Not yet specified
 
-- Exact Hermes integration contract once the live hooks and core implementation have been inspected.
-- Exact provider/model slugs available through this Hermes installation and their provider-specific switch requirements.
 - The smallest test seam that proves provider switching without real-provider quota use.
 - Whether OpenRouter's coding/general routers meet the V1 overflow contract after fixed overflow works.
 - WebUI badge changes after the policy core and adapter are working.
