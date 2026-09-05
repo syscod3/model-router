@@ -6,6 +6,8 @@ from collections.abc import Mapping
 
 from .types import CandidateHealth, HealthState, RoutingDecision, Tier
 
+PAYG_OVERFLOW_PROVIDERS = frozenset({"openrouter", "deepinfra"})
+
 
 def resolve_overflow(
     tier: Tier,
@@ -19,6 +21,7 @@ def resolve_overflow(
         candidate_health = health.get(candidate.health_key)
         if (
             not candidate.paid
+            or candidate.provider not in PAYG_OVERFLOW_PROVIDERS
             or candidate.estimated_cost_usd is None
             or candidate.estimated_cost_usd < 0
             or candidate.estimated_cost_usd > remaining_budget_usd

@@ -34,6 +34,7 @@ import yaml
 from integrations.hermes import HermesRouteTarget, apply_route
 from model_router.failures import classify_failure
 from model_router.health import HealthStore
+from model_router.overflow import PAYG_OVERFLOW_PROVIDERS
 
 logger = logging.getLogger(__name__)
 
@@ -900,6 +901,8 @@ def on_api_request_error(
     day = datetime.now(timezone.utc).date().isoformat()
     for candidate in candidates:
         if not candidate.get("paid", False):
+            continue
+        if candidate.get("provider") not in PAYG_OVERFLOW_PROVIDERS:
             continue
         if candidate.get("provider") == provider and candidate.get("model") == model:
             continue

@@ -16,6 +16,10 @@ def test_overflow_uses_only_fixed_cost_paid_candidate_within_budget():
                 id="payg", provider="openrouter", model="fixed", paid=True,
                 estimated_cost_usd=0.03,
             ),
+            Candidate(
+                id="unsupported-paid", provider="other", model="fixed", paid=True,
+                estimated_cost_usd=0.01,
+            ),
             Candidate(id="unknown-cost", provider="openrouter", model="unknown", paid=True),
         ),
     )
@@ -25,6 +29,19 @@ def test_overflow_uses_only_fixed_cost_paid_candidate_within_budget():
     assert decision is not None
     assert decision.candidate.id == "payg"
     assert decision.source == "overflow"
+
+
+def test_overflow_skips_paid_candidates_from_unsupported_providers():
+    tier = Tier(
+        number=2,
+        label="Default",
+        reasoning=None,
+        candidates=(
+            Candidate(id="other", provider="other", model="fixed", paid=True, estimated_cost_usd=0.01),
+        ),
+    )
+
+    assert resolve_overflow(tier, set(), {}, remaining_budget_usd=1.0) is None
 
 
 def test_overflow_skips_unhealthy_or_over_budget_candidate():

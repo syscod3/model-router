@@ -35,6 +35,10 @@ def test_api_failure_uses_paid_overflow_only_after_free_candidates_and_within_bu
         "tiers": {2: {"candidates": [
             {"provider": "free", "model": "primary"},
             {
+                "provider": "unsupported", "model": "not-payg", "paid": True,
+                "estimated_cost_usd": 0.01,
+            },
+            {
                 "provider": "openrouter", "model": "fixed-overflow", "paid": True,
                 "estimated_cost_usd": 0.03,
             },
