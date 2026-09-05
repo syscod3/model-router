@@ -19,6 +19,7 @@ GitHub Issues are disabled on this fork, so this map uses the repository-local M
 - [Verify Hermes provider-switching and error-hook seam](tickets/verify-hermes-routing-seam.md) — Hermes has no native per-turn route-selection hook; the adapter must use `AIAgent.switch_model(...)` until a supported override exists. See [research](../../../docs/research/hermes-routing-seam.md).
 - [Discover the usable provider and model contract](tickets/discover-provider-model-contract.md) — use canonical provider slugs; bootstrap model names remain configurable placeholders until Hermes discovery returns account-usable IDs. See [research](../../../research/provider-model-contract.md).
 - [Establish the baseline regression contract](tickets/establish-baseline-regression-contract.md) — five focused tests now protect classification fast paths, explicit tier selection, config normalization, pins, and tool-error escalation before refactoring.
+- [Define the V1 policy-core contract](tickets/define-v1-policy-core.md) — a provider-neutral `model_router` package owns tier and same-tier candidate decisions; Hermes mutation stays outside it.
 
 ## Not yet specified
 

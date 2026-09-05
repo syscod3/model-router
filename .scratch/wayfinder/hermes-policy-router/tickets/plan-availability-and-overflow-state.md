@@ -4,7 +4,7 @@ labels: [wayfinder:grilling]
 parent: ../map.md
 status: open
 assignee: unassigned
-blocked_by: [define-v1-policy-core.md]
+blocked_by: []
 ---
 
 ## Question
