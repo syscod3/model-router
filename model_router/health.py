@@ -1,6 +1,7 @@
 """SQLite WAL health state shared by Hermes processes."""
 from __future__ import annotations
 import sqlite3
+from math import isfinite
 from pathlib import Path
 from .failures import Failure
 from .types import CandidateHealth, HealthState
@@ -38,18 +39,30 @@ class HealthStore:
             db.executemany("DELETE FROM candidate_health WHERE key = ?", ((key,) for key in keys))
 
     def remaining_budget_usd(self, day: str, *, daily_limit_usd: float) -> float:
+        if not isfinite(daily_limit_usd) or daily_limit_usd < 0:
+            return 0.0
         with self._connect() as db:
             row = db.execute("SELECT spent_usd FROM payg_budget WHERE day = ?", (day,)).fetchone()
-        return max(0.0, daily_limit_usd - (float(row[0]) if row else 0.0))
+        spent = float(row[0]) if row else 0.0
+        if not isfinite(spent) or spent < 0:
+            return 0.0
+        return max(0.0, daily_limit_usd - spent)
 
     def reserve_budget_usd(self, day: str, *, daily_limit_usd: float, amount_usd: float) -> bool:
         """Atomically reserve a fixed estimated cost without exceeding the daily cap."""
-        if amount_usd < 0 or daily_limit_usd < 0:
+        if (
+            not isfinite(amount_usd)
+            or not isfinite(daily_limit_usd)
+            or amount_usd < 0
+            or daily_limit_usd < 0
+        ):
             return False
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute("SELECT spent_usd FROM payg_budget WHERE day = ?", (day,)).fetchone()
             spent = float(row[0]) if row else 0.0
+            if not isfinite(spent) or spent < 0:
+                return False
             if spent + amount_usd > daily_limit_usd:
                 return False
             db.execute(

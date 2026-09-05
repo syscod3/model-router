@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import copy
 import logging
+import math
 import os
 import re
 import threading
@@ -412,7 +413,8 @@ def get_last_tier(session_id: str) -> int:
 
 def _payg_daily_budget_usd() -> float:
     try:
-        return max(0.0, float(_router_config.get("payg", {}).get("daily_budget_usd", 0.0)))
+        daily_budget_usd = float(_router_config.get("payg", {}).get("daily_budget_usd", 0.0))
+        return daily_budget_usd if math.isfinite(daily_budget_usd) and daily_budget_usd > 0 else 0.0
     except (TypeError, ValueError):
         return 0.0
 
@@ -912,7 +914,7 @@ def on_api_request_error(
             estimated_cost_usd = float(candidate["estimated_cost_usd"])
         except (KeyError, TypeError, ValueError):
             continue
-        if estimated_cost_usd < 0:
+        if not math.isfinite(estimated_cost_usd) or estimated_cost_usd < 0:
             continue
         health = store.get(f"{candidate['provider']}:{candidate['model']}", now=now)
         if health.state.value != "healthy":

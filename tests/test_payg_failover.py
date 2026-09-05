@@ -57,3 +57,27 @@ def test_api_failure_uses_paid_overflow_only_after_free_candidates_and_within_bu
     )
 
     assert [call[:2] for call in agent.calls] == [("fixed-overflow", "openrouter")]
+
+
+def test_api_failure_does_not_use_non_finite_payg_budget_or_cost(tmp_path):
+    router = _router()
+    router._apply_router_config(router._normalize_router_config({
+        "payg": {"daily_budget_usd": float("inf")},
+        "tiers": {2: {"candidates": [
+            {"provider": "free", "model": "primary"},
+            {
+                "provider": "openrouter", "model": "unbounded", "paid": True,
+                "estimated_cost_usd": float("nan"),
+            },
+        ]}},
+    }))
+    router._health_store = HealthStore(tmp_path / "state.db")
+    agent = FakeAgent()
+    router.bind_session_agent("payg", agent)
+    router._last_tier["payg"] = 2
+
+    router.on_api_request_error(
+        session_id="payg", provider="free", model="primary", status_code=429
+    )
+
+    assert agent.calls == []

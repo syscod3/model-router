@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from math import isfinite
 
 from .types import CandidateHealth, HealthState, RoutingDecision, Tier
 
@@ -23,6 +24,7 @@ def resolve_overflow(
             not candidate.paid
             or candidate.provider not in PAYG_OVERFLOW_PROVIDERS
             or candidate.estimated_cost_usd is None
+            or not isfinite(candidate.estimated_cost_usd)
             or candidate.estimated_cost_usd < 0
             or candidate.estimated_cost_usd > remaining_budget_usd
             or candidate.id in attempted_candidates
