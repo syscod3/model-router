@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -57,3 +58,40 @@ def test_fake_provider_429_fails_over_without_network(tmp_path):
     )
 
     assert agent.calls == [("fake-fallback", "fallback")]
+
+
+def test_fake_provider_exhaustion_uses_fixed_payg_overflow_within_budget(tmp_path):
+    router = _router()
+    router._apply_router_config(router._normalize_router_config({
+        "payg": {"daily_budget_usd": 0.05},
+        "tiers": {2: {"candidates": [
+            {"provider": "fake-primary", "model": "primary"},
+            {"provider": "fake-fallback", "model": "fallback"},
+            {
+                "provider": "openrouter",
+                "model": "fixed-overflow",
+                "paid": True,
+                "estimated_cost_usd": 0.03,
+            },
+        ]}},
+    }))
+    store = HealthStore(tmp_path / "state.db")
+    router._health_store = store
+    router._last_tier["integration"] = 2
+    agent = FakeProviderAgent()
+    router.bind_session_agent("integration", agent)
+
+    router.on_api_request_error(
+        session_id="integration", provider="fake-primary", model="primary", status_code=429
+    )
+    router.on_api_request_error(
+        session_id="integration", provider="fake-fallback", model="fallback", status_code=429
+    )
+
+    assert agent.calls == [
+        ("fake-fallback", "fallback"),
+        ("openrouter", "fixed-overflow"),
+    ]
+    assert store.remaining_budget_usd(
+        datetime.now(timezone.utc).date().isoformat(), daily_limit_usd=0.05
+    ) == pytest.approx(0.02)
