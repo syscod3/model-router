@@ -107,3 +107,31 @@ def test_api_failure_skips_disabled_payg_overflow_candidate(tmp_path):
 
     assert agent.calls == []
     assert store.remaining_budget_usd("2026-09-05", daily_limit_usd=0.05) == 0.05
+
+
+def test_same_turn_keeps_same_tier_fallback_after_api_failure(tmp_path):
+    router = _router()
+    router._apply_router_config(router._normalize_router_config({
+        "tiers": {2: {"candidates": [
+            {"provider": "fake-primary", "model": "primary"},
+            {"provider": "fake-fallback", "model": "fallback"},
+        ]}},
+    }))
+    router._health_store = HealthStore(tmp_path / "state.db")
+    router._manager_ref = type("Manager", (), {"_cli_ref": None})()
+    agent = FakeAgent()
+    agent.model = "primary"
+    router.bind_session_agent("same-turn", agent)
+    router.prepare_turn(
+        session_id="same-turn", user_message="work", current_model="primary"
+    )
+
+    router.on_api_request_error(
+        session_id="same-turn", provider="fake-primary", model="primary", status_code=429
+    )
+    result = router.prepare_turn(
+        session_id="same-turn", user_message="work", current_model="fallback", apply_live=True
+    )
+
+    assert agent.calls == [("fallback", "fake-fallback", "", "", "", None)]
+    assert result["model"] == "fallback"

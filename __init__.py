@@ -717,6 +717,16 @@ def prepare_turn(
     target_model = str(target_meta.get("model", "") or actual_model)
     target_reasoning = target_meta.get("reasoning")
 
+    # An API failure may have moved this in-progress turn to a healthy
+    # same-tier candidate.  Do not switch it back to the tier primary on the
+    # next pre-call hook; the primary is reconsidered on the next user turn.
+    if not is_new_user_turn:
+        for candidate in target_meta.get("candidates", []):
+            if candidate.get("model") == actual_model:
+                target_model = actual_model
+                target_reasoning = candidate.get("reasoning", target_reasoning)
+                break
+
     logger.debug(
         "model-router: turn T%d -> model=%s vs actual=%s",
         target_tier, target_model, actual_model,
