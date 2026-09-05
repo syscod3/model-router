@@ -81,3 +81,29 @@ def test_api_failure_does_not_use_non_finite_payg_budget_or_cost(tmp_path):
     )
 
     assert agent.calls == []
+
+
+def test_api_failure_skips_disabled_payg_overflow_candidate(tmp_path):
+    router = _router()
+    router._apply_router_config(router._normalize_router_config({
+        "payg": {"daily_budget_usd": 0.05},
+        "tiers": {2: {"candidates": [
+            {"provider": "free", "model": "primary"},
+            {
+                "provider": "openrouter", "model": "disabled-overflow", "paid": True,
+                "estimated_cost_usd": 0.03, "disabled": True,
+            },
+        ]}},
+    }))
+    store = HealthStore(tmp_path / "state.db")
+    router._health_store = store
+    agent = FakeAgent()
+    router.bind_session_agent("disabled-payg", agent)
+    router._last_tier["disabled-payg"] = 2
+
+    router.on_api_request_error(
+        session_id="disabled-payg", provider="free", model="primary", status_code=429
+    )
+
+    assert agent.calls == []
+    assert store.remaining_budget_usd("2026-09-05", daily_limit_usd=0.05) == 0.05

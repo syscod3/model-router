@@ -889,6 +889,8 @@ def on_api_request_error(
     for candidate in candidates:
         if candidate.get("paid", False):
             continue
+        if candidate.get("disabled", False):
+            continue
         if candidate.get("provider") == provider and candidate.get("model") == model:
             continue
         if not candidate.get("provider") or not candidate.get("model"):
@@ -911,6 +913,8 @@ def on_api_request_error(
     day = datetime.now(timezone.utc).date().isoformat()
     for candidate in candidates:
         if not candidate.get("paid", False):
+            continue
+        if candidate.get("disabled", False):
             continue
         if candidate.get("provider") not in PAYG_OVERFLOW_PROVIDERS:
             continue
