@@ -91,6 +91,19 @@ def test_overflow_skips_non_finite_remaining_budget(remaining_budget_usd):
     assert resolve_overflow(tier, set(), {}, remaining_budget_usd=remaining_budget_usd) is None
 
 
+def test_overflow_skips_zero_cost_paid_candidate():
+    tier = Tier(
+        number=2,
+        label="Default",
+        reasoning=None,
+        candidates=(
+            Candidate(id="payg", provider="openrouter", model="fixed", paid=True, estimated_cost_usd=0.0),
+        ),
+    )
+
+    assert resolve_overflow(tier, set(), {}, remaining_budget_usd=1.0) is None
+
+
 def test_daily_budget_reservation_is_shared_and_cannot_exceed_cap(tmp_path):
     store = HealthStore(tmp_path / "state.db")
 
@@ -109,3 +122,11 @@ def test_daily_budget_rejects_non_finite_limits_and_reservations(tmp_path, value
     assert not store.reserve_budget_usd("2026-09-05", daily_limit_usd=0.05, amount_usd=value)
     assert not store.reserve_budget_usd("2026-09-05", daily_limit_usd=value, amount_usd=0.01)
     assert store.remaining_budget_usd("2026-09-05", daily_limit_usd=value) == 0.0
+
+
+def test_daily_budget_rejects_zero_limit_and_reservation(tmp_path):
+    store = HealthStore(tmp_path / "state.db")
+
+    assert not store.reserve_budget_usd("2026-09-05", daily_limit_usd=0.0, amount_usd=0.01)
+    assert not store.reserve_budget_usd("2026-09-05", daily_limit_usd=0.05, amount_usd=0.0)
+    assert store.remaining_budget_usd("2026-09-05", daily_limit_usd=0.0) == 0.0

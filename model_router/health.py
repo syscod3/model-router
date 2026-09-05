@@ -39,7 +39,7 @@ class HealthStore:
             db.executemany("DELETE FROM candidate_health WHERE key = ?", ((key,) for key in keys))
 
     def remaining_budget_usd(self, day: str, *, daily_limit_usd: float) -> float:
-        if not isfinite(daily_limit_usd) or daily_limit_usd < 0:
+        if not isfinite(daily_limit_usd) or daily_limit_usd <= 0:
             return 0.0
         with self._connect() as db:
             row = db.execute("SELECT spent_usd FROM payg_budget WHERE day = ?", (day,)).fetchone()
@@ -53,8 +53,8 @@ class HealthStore:
         if (
             not isfinite(amount_usd)
             or not isfinite(daily_limit_usd)
-            or amount_usd < 0
-            or daily_limit_usd < 0
+            or amount_usd <= 0
+            or daily_limit_usd <= 0
         ):
             return False
         with self._connect() as db:

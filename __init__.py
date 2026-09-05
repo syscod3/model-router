@@ -936,7 +936,7 @@ def on_api_request_error(
             estimated_cost_usd = float(candidate["estimated_cost_usd"])
         except (KeyError, TypeError, ValueError):
             continue
-        if not math.isfinite(estimated_cost_usd) or estimated_cost_usd < 0:
+        if not math.isfinite(estimated_cost_usd) or estimated_cost_usd <= 0:
             continue
         health = store.get(f"{candidate['provider']}:{candidate['model']}", now=now)
         if health.state.value != "healthy":
