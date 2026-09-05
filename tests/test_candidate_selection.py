@@ -84,3 +84,33 @@ def test_root_config_uses_first_candidate_as_legacy_primary(router):
 
     assert config["tiers"][3]["model"] == "gpt-terra"
     assert len(config["tiers"][3]["candidates"]) == 2
+
+
+def test_candidate_primary_switches_its_configured_provider(router):
+    class FakeAgent:
+        def __init__(self):
+            self.model = "old/model"
+            self.reasoning_config = None
+            self.calls = []
+
+        def switch_model(self, model, provider, api_key="", base_url="", api_mode="", capabilities=None):
+            self.calls.append((model, provider, base_url, api_mode))
+            self.model = model
+
+    router._apply_router_config(router._normalize_router_config({
+        "tiers": {2: {"candidates": [{
+            "provider": "fake-primary",
+            "model": "primary",
+            "base_url": "https://fake.example/v1",
+            "api_mode": "openai",
+            "reasoning": "low",
+        }]}},
+    }))
+    agent = FakeAgent()
+    router._manager_ref = type("Manager", (), {"_cli_ref": None})()
+    router.bind_session_agent("candidate-primary", agent)
+
+    router._apply_tier("candidate-primary", 2, agent.model)
+
+    assert agent.calls == [("primary", "fake-primary", "https://fake.example/v1", "openai")]
+    assert agent.reasoning_config == {"effort": "low"}

@@ -183,23 +183,31 @@ def _apply_router_config(config: dict[str, Any]) -> None:
     global _router_config, TIERS, MODEL_TO_TIER, FLASH_MODEL, FLASH_PROVIDER, _TIER_LABELS
 
     _router_config = config
-    TIERS = {
-        tier_num: {
+    TIERS = {}
+    for tier_num, meta in config["tiers"].items():
+        candidates = meta.get("candidates", [])
+        primary = next(
+            (candidate for candidate in candidates if not candidate.get("paid", False)),
+            None,
+        )
+        # Candidate pools must use the same provider-aware route for their
+        # normal primary as they do for fallbacks. Legacy model-only tiers
+        # retain their existing same-provider behavior.
+        route = primary if primary is not None else meta
+        TIERS[tier_num] = {
             "model": meta["model"],
-            "provider": meta.get("provider", ""),
-            "base_url": meta.get("base_url", ""),
-            "api_mode": meta.get("api_mode", ""),
-            "candidates": meta.get("candidates", []),
+            "provider": route.get("provider", ""),
+            "base_url": route.get("base_url", meta.get("base_url", "")),
+            "api_mode": route.get("api_mode", meta.get("api_mode", "")),
+            "candidates": candidates,
             "paid": meta.get("paid", False),
             "estimated_cost_usd": meta.get("estimated_cost_usd"),
-            "reasoning": meta.get("reasoning"),
+            "reasoning": route.get("reasoning", meta.get("reasoning")),
             "label": meta.get("label", f"T{tier_num}"),
             "emoji": meta.get("emoji", ""),
             "role": meta.get("role", ""),
             "best_for": meta.get("best_for", []),
         }
-        for tier_num, meta in config["tiers"].items()
-    }
 
     model_to_tier: dict[str, int] = {}
     for tier_num in sorted(TIERS):
