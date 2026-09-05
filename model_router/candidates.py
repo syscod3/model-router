@@ -15,7 +15,7 @@ def resolve_candidate(
     """Return the first eligible normal candidate, never another tier."""
     for candidate in tier.candidates:
         candidate_health = health.get(candidate.health_key)
-        if candidate.id in attempted_candidates or candidate.disabled:
+        if candidate.id in attempted_candidates or candidate.disabled or candidate.paid:
             continue
         if candidate_health and candidate_health.state in {
             HealthState.COOLING_DOWN,

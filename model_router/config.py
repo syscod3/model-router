@@ -41,6 +41,11 @@ def normalize_tiers(raw_tiers: Mapping[Any, Any]) -> dict[int, Tier]:
                 base_url=item.get("base_url"),
                 priority=index,
                 paid=bool(item.get("paid", False)),
+                estimated_cost_usd=(
+                    float(item["estimated_cost_usd"])
+                    if item.get("estimated_cost_usd") is not None
+                    else None
+                ),
                 disabled=bool(item.get("disabled", False)),
             )
             for index, item in enumerate(raw_candidates)

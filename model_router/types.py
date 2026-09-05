@@ -23,6 +23,7 @@ class Candidate:
     base_url: str | None = None
     priority: int = 0
     paid: bool = False
+    estimated_cost_usd: float | None = None
     disabled: bool = False
 
     @property

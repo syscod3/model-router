@@ -25,6 +25,7 @@ import logging
 import os
 import re
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -49,6 +50,7 @@ DEFAULT_ROUTER_CONFIG = {
         "timeout": 30,
         "extra_body": {"enable_caching": True},
     },
+    "payg": {"daily_budget_usd": 0.0},
     "tiers": {
         1: {
             "label": "T1 Flash",
@@ -161,9 +163,14 @@ def _normalize_router_config(raw: dict[str, Any] | None) -> dict[str, Any]:
         if candidates is not None:
             if not isinstance(candidates, list) or not candidates:
                 raise ValueError(f"tiers.{tier_num}.candidates must be a non-empty list")
-            primary = candidates[0]
-            if not isinstance(primary, dict) or not primary.get("model"):
-                raise ValueError(f"tiers.{tier_num}.candidates[0] needs model")
+            primary = next(
+                (candidate for candidate in candidates if isinstance(candidate, dict) and not candidate.get("paid", False)),
+                None,
+            )
+            if not primary or not primary.get("model"):
+                raise ValueError(
+                    f"tiers.{tier_num}.candidates need an unpaid primary with model"
+                )
             tier_defaults["model"] = primary["model"]
         normalized_tiers[tier_num] = tier_defaults
     merged["tiers"] = normalized_tiers
@@ -181,6 +188,8 @@ def _apply_router_config(config: dict[str, Any]) -> None:
             "base_url": meta.get("base_url", ""),
             "api_mode": meta.get("api_mode", ""),
             "candidates": meta.get("candidates", []),
+            "paid": meta.get("paid", False),
+            "estimated_cost_usd": meta.get("estimated_cost_usd"),
             "reasoning": meta.get("reasoning"),
             "label": meta.get("label", f"T{tier_num}"),
             "emoji": meta.get("emoji", ""),
@@ -397,6 +406,13 @@ def _get_health_store() -> HealthStore:
 def get_last_tier(session_id: str) -> int:
     with _state_lock:
         return _last_tier.get(session_id, 0)
+
+
+def _payg_daily_budget_usd() -> float:
+    try:
+        return max(0.0, float(_router_config.get("payg", {}).get("daily_budget_usd", 0.0)))
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def bind_session_agent(session_id: str, agent: Any) -> None:
@@ -785,26 +801,28 @@ def on_api_request_error(
     retry_after: int | None = None,
     **kwargs: Any,
 ) -> None:
-    """Record provider failure and preselect the next same-tier candidate."""
+    """Record a failure, try free fallback, then fixed-cost PAYG overflow."""
     if not session_id or is_session_pinned(session_id):
         return
     import time
 
+    now = time.time()
     failure = classify_failure(status_code=status_code, retry_after_seconds=retry_after)
-    _get_health_store().record_failure(f"{provider}:{model}", failure, now=time.time())
+    store = _get_health_store()
+    store.record_failure(f"{provider}:{model}", failure, now=now)
     tier = get_last_tier(session_id)
     candidates = TIERS.get(tier, {}).get("candidates", [])
     agent = _get_live_agent(session_id)
     if agent is None:
         return
     for candidate in candidates:
+        if candidate.get("paid", False):
+            continue
         if candidate.get("provider") == provider and candidate.get("model") == model:
             continue
         if not candidate.get("provider") or not candidate.get("model"):
             continue
-        health = _get_health_store().get(
-            f"{candidate['provider']}:{candidate['model']}", now=time.time()
-        )
+        health = store.get(f"{candidate['provider']}:{candidate['model']}", now=now)
         if health.state.value != "healthy":
             continue
         apply_route(agent, HermesRouteTarget(
@@ -814,6 +832,41 @@ def on_api_request_error(
             reasoning=candidate.get("reasoning", TIERS[tier].get("reasoning")),
         ))
         logger.info("route: T%d → %s/%s [same-tier fallback]", tier, candidate["provider"], candidate["model"])
+        return
+
+    daily_budget_usd = _payg_daily_budget_usd()
+    if daily_budget_usd <= 0:
+        return
+    day = datetime.now(timezone.utc).date().isoformat()
+    for candidate in candidates:
+        if not candidate.get("paid", False):
+            continue
+        if candidate.get("provider") == provider and candidate.get("model") == model:
+            continue
+        if not candidate.get("provider") or not candidate.get("model"):
+            continue
+        try:
+            estimated_cost_usd = float(candidate["estimated_cost_usd"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if estimated_cost_usd < 0:
+            continue
+        health = store.get(f"{candidate['provider']}:{candidate['model']}", now=now)
+        if health.state.value != "healthy":
+            continue
+        if not store.reserve_budget_usd(
+            day,
+            daily_limit_usd=daily_budget_usd,
+            amount_usd=estimated_cost_usd,
+        ):
+            continue
+        apply_route(agent, HermesRouteTarget(
+            provider=candidate["provider"], model=candidate["model"],
+            base_url=candidate.get("base_url", ""),
+            api_mode=candidate.get("api_mode", ""),
+            reasoning=candidate.get("reasoning", TIERS[tier].get("reasoning")),
+        ))
+        logger.info("route: T%d → %s/%s [PAYG overflow]", tier, candidate["provider"], candidate["model"])
         return
 
 
@@ -981,6 +1034,7 @@ def register(ctx) -> None:
     ctx.register_hook("pre_llm_call",   on_pre_llm_call)
     ctx.register_hook("post_llm_call",  on_post_llm_call)
     ctx.register_hook("post_tool_call", on_post_tool_call)
+    ctx.register_hook("api_request_error", on_api_request_error)
 
     # Expose public API on the PluginManager so slash commands (/t1-/t5, /auto)
     # can call us via get_plugin_manager().router_apply_tier(...).
