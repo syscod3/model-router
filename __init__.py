@@ -395,6 +395,7 @@ _escalated:       dict[str, bool] = {}             # session_id -> True if we al
 _live_agents:     dict[str, Any] = {}              # session_id -> active agent bound by WebUI/CLI bridge
 _state_lock = threading.Lock()
 _health_store: HealthStore | None = None
+_manager_ref: Any | None = None
 
 
 def _get_health_store() -> HealthStore:
@@ -413,6 +414,65 @@ def _payg_daily_budget_usd() -> float:
         return max(0.0, float(_router_config.get("payg", {}).get("daily_budget_usd", 0.0)))
     except (TypeError, ValueError):
         return 0.0
+
+
+def get_route_status(session_id: str) -> dict[str, Any]:
+    """Return concise, provider-neutral route state for the current session."""
+    tier = get_last_tier(session_id)
+    agent = _get_live_agent(session_id)
+    model = getattr(agent, "model", "") if agent is not None else ""
+    if not model and tier:
+        model = str(TIERS.get(tier, {}).get("model", ""))
+    daily_limit_usd = _payg_daily_budget_usd()
+    day = datetime.now(timezone.utc).date().isoformat()
+    remaining_budget_usd = (
+        _get_health_store().remaining_budget_usd(day, daily_limit_usd=daily_limit_usd)
+        if daily_limit_usd > 0
+        else 0.0
+    )
+    return {
+        "session_id": session_id,
+        "tier": tier,
+        "model": model,
+        "pinned": is_session_pinned(session_id),
+        "daily_budget_usd": daily_limit_usd,
+        "remaining_budget_usd": remaining_budget_usd,
+    }
+
+
+def get_route_health(session_id: str) -> list[dict[str, Any]]:
+    """Return health for configured candidates in the session's active tier."""
+    import time
+
+    tier = get_last_tier(session_id)
+    now = time.time()
+    store = _get_health_store()
+    return [
+        {
+            "provider": candidate.get("provider", ""),
+            "model": candidate.get("model", ""),
+            "paid": bool(candidate.get("paid", False)),
+            "estimated_cost_usd": candidate.get("estimated_cost_usd"),
+            "state": health.state.value,
+            "failure_type": health.failure_type,
+            "cooldown_until": health.cooldown_until,
+        }
+        for candidate in TIERS.get(tier, {}).get("candidates", [])
+        if candidate.get("provider") and candidate.get("model")
+        for health in [store.get(f"{candidate['provider']}:{candidate['model']}", now=now)]
+    ]
+
+
+def reset_route_health(session_id: str) -> int:
+    """Clear active-tier cooldowns without changing the PAYG daily budget."""
+    tier = get_last_tier(session_id)
+    keys = [
+        f"{candidate['provider']}:{candidate['model']}"
+        for candidate in TIERS.get(tier, {}).get("candidates", [])
+        if candidate.get("provider") and candidate.get("model")
+    ]
+    _get_health_store().reset_health(keys)
+    return len(keys)
 
 
 def bind_session_agent(session_id: str, agent: Any) -> None:
@@ -1048,6 +1108,9 @@ def register(ctx) -> None:
     mgr.router_is_pinned     = is_session_pinned
     mgr.router_get_tier      = get_last_tier
     mgr.router_get_tier_meta = get_tier_meta
+    mgr.router_get_route_status = get_route_status
+    mgr.router_get_route_health = get_route_health
+    mgr.router_reset_route_health = reset_route_health
     mgr.router_prepare_turn  = prepare_turn
     mgr.router_bind_agent    = bind_session_agent
     mgr.router_unbind_agent  = unbind_session_agent

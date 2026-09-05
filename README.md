@@ -149,6 +149,9 @@ integrations:
 - Every turn is classified before the main LLM call. On classifier failure, the router falls back to `T2`.
 - You can hint tiers in user text with `T1` to `T5`, `tier1` to `tier5`, or `tier 1` to `tier 5`.
 - `/model`, `/t1` to `/t5`, and `/auto` work at session scope.
+- `/route` shows the active tier, pin state, and remaining PAYG budget. Use
+  `/route health` to inspect candidate cooldowns or `/route reset` to clear
+  those cooldowns. Reset never changes the PAYG daily budget.
 - The active tier is shown in the CLI status bar.
 - In `hermes-webui`, the composer model dropdown auto-detects model-router and renders native `Auto`, `T1` to `T5` rows showing the configured target models for the active profile.
 
@@ -202,6 +205,18 @@ Validation is block-aware, not marker-based. Startup validation checks for the c
 - That means the plugin is not hardcoded to OpenRouter only, but non-OpenRouter providers depend on Hermes supporting them correctly through `triage_specifier`.
 
 ## Verify
+
+Run the normal test suite without provider traffic:
+
+```bash
+python3 -m pytest -q
+```
+
+The fake-provider integration boundary is opt-in and has no network calls:
+
+```bash
+MODEL_ROUTER_INTEGRATION=1 python3 -m pytest -q tests/integration
+```
 
 ```bash
 hermes plugins list

@@ -180,6 +180,8 @@ TIER_COMMANDS_BLOCK = """
                cli_only=True),
     CommandDef("auto", "Resume auto model routing (undo /model or /t1-/t5 pin for this session)", "Configuration",
                cli_only=True),
+    CommandDef("route", "Show model-router route state; use /route health or /route reset", "Configuration",
+               cli_only=True),
 """
 
 CLI_REF_BLOCK = """        # Ensure plugin manager has a CLI reference even in non-interactive
@@ -273,12 +275,57 @@ CLI_TIER_HANDLERS_BLOCK = '''    def _handle_tier_pin(self, tier_cmd: str) -> No
         except Exception as exc:
             _cprint(f"  ✗ Failed to resume auto routing: {exc}")
 
+    def _handle_route(self, cmd_original: str) -> None:
+        """/route [health|reset] — inspect or clear router candidate cooldowns."""
+        try:
+            from hermes_cli.plugins import get_plugin_manager
+            _mgr = get_plugin_manager()
+            _status_fn = getattr(_mgr, "router_get_route_status", None)
+            _health_fn = getattr(_mgr, "router_get_route_health", None)
+            _reset_fn = getattr(_mgr, "router_reset_route_health", None)
+            if _status_fn is None or _health_fn is None or _reset_fn is None:
+                _cprint("  ✗ model-router plugin not active — /route unavailable")
+                return
+
+            action = cmd_original.strip().lower().split(maxsplit=1)
+            action = action[1] if len(action) > 1 else ""
+            session_id = self.session_id or ""
+            if action == "reset":
+                count = _reset_fn(session_id)
+                _cprint(f"  ✓ Cleared health cooldowns for {count} route candidate(s)")
+                _cprint("    PAYG daily budget reservations were not changed.")
+                return
+            if action == "health":
+                health = _health_fn(session_id)
+                if not health:
+                    _cprint("  • No active route tier yet")
+                    return
+                for candidate in health:
+                    paid = " PAYG" if candidate["paid"] else ""
+                    _cprint(f"  • {candidate['provider']}/{candidate['model']}: {candidate['state']}{paid}")
+                return
+            if action:
+                _cprint("  ✗ Usage: /route [health|reset]")
+                return
+            status = _status_fn(session_id)
+            tier = status["tier"] or "unassigned"
+            pin = "pinned" if status["pinned"] else "auto"
+            _cprint(f"  • Route: T{tier} {status['model'] or 'no model'} ({pin})")
+            _cprint(
+                f"  • PAYG today: ${status['remaining_budget_usd']:.2f} remaining "
+                f"of ${status['daily_budget_usd']:.2f}"
+            )
+        except Exception as exc:
+            _cprint(f"  ✗ Failed to inspect route: {exc}")
+
 '''
 
 CLI_PROCESS_COMMAND_BLOCK = """        elif canonical in ("t1", "t2", "t3", "t4", "t5"):
             self._handle_tier_pin(canonical)
         elif canonical == "auto":
             self._handle_auto_routing()
+        elif canonical == "route":
+            self._handle_route(cmd_original)
 """
 
 CLI_INLINE_ROUTING_BLOCK = """                # Handle /model directly on the UI thread so interactive pickers
@@ -1353,7 +1400,7 @@ def repair_commands_py(commands_path: Path) -> bool:
         flags=re.MULTILINE,
     )
     cleaned = re.sub(
-        r'^\s*CommandDef\("t1".*?^\s*CommandDef\("auto".*?^\s*cli_only=True\),\n?',
+        r'^\s*CommandDef\("t1".*?^\s*CommandDef\("auto".*?cli_only=True\),\n?(?:^\s*CommandDef\("route".*?cli_only=True\),\n?)?',
         "",
         cleaned,
         flags=re.MULTILINE | re.DOTALL,
@@ -1397,7 +1444,7 @@ def repair_cli_py(cli_path: Path) -> bool:
     text = _replace_or_insert_block(
         text=text,
         expected_block=CLI_PROCESS_COMMAND_BLOCK,
-        existing_pattern=r'^\s*elif canonical in \("t1", "t2", "t3", "t4", "t5"\):\n\s*self\._handle_tier_pin\(canonical\)\n\s*elif canonical == "auto":\n\s*self\._handle_auto_routing\(\)\n',
+        existing_pattern=r'^\s*elif canonical in \("t1", "t2", "t3", "t4", "t5"\):\n\s*self\._handle_tier_pin\(canonical\)\n\s*elif canonical == "auto":\n\s*self\._handle_auto_routing\(\)\n(?:\s*elif canonical == "route":\n\s*self\._handle_route\(cmd_original\)\n)?',
         insert_anchor_pattern=r'^\s*elif canonical == "model":\n\s*self\._handle_model_switch\(cmd_original\)\n',
         insert_after_match=True,
         missing_error="Could not locate /model branch in cli.py for model-router patching",
@@ -1790,13 +1837,13 @@ def collect_missing_core_integrations(home_root: Path) -> list[str]:
 
     missing: list[str] = []
     if f"{TIER_COMMANDS_BLOCK}]" not in commands_text:
-        missing.append("complete slash command block for /t1-/t5 and /auto in the command registry")
+        missing.append("complete slash command block for /t1-/t5, /auto, and /route in the command registry")
     if CLI_REF_BLOCK not in cli_text:
         missing.append("complete cli.py _cli_ref block for non-interactive mode")
     if CLI_TIER_HANDLERS_BLOCK not in cli_text:
-        missing.append("complete CLI tier handler block for /t1-/t5 and /auto")
+        missing.append("complete CLI tier handler block for /t1-/t5, /auto, and /route")
     if CLI_PROCESS_COMMAND_BLOCK not in cli_text:
-        missing.append("complete process_command dispatch block for /t1-/t5 and /auto")
+        missing.append("complete process_command dispatch block for /t1-/t5, /auto, and /route")
     if CLI_INLINE_ROUTING_BLOCK not in cli_text:
         missing.append("complete inline UI-thread routing block for /model and /t1-/t5")
     return missing

@@ -26,6 +26,17 @@ class HealthStore:
             return CandidateHealth()
         return CandidateHealth(state=HealthState(row[0]), failure_type=row[1], cooldown_until=row[2])
 
+    def reset_health(self, keys: list[str]) -> None:
+        """Clear cooldown state for the supplied candidates only.
+
+        PAYG reservations are deliberately retained: a health reset must not
+        provide a way to bypass the daily spending limit.
+        """
+        if not keys:
+            return
+        with self._connect() as db:
+            db.executemany("DELETE FROM candidate_health WHERE key = ?", ((key,) for key in keys))
+
     def remaining_budget_usd(self, day: str, *, daily_limit_usd: float) -> float:
         with self._connect() as db:
             row = db.execute("SELECT spent_usd FROM payg_budget WHERE day = ?", (day,)).fetchone()
