@@ -31,6 +31,8 @@ from typing import Any
 import yaml
 
 from integrations.hermes import HermesRouteTarget, apply_route
+from model_router.failures import classify_failure
+from model_router.health import HealthStore
 
 logger = logging.getLogger(__name__)
 
@@ -383,6 +385,14 @@ _tool_errors:     dict[str, int] = {}              # session_id -> consecutive t
 _escalated:       dict[str, bool] = {}             # session_id -> True if we already escalated mid-turn
 _live_agents:     dict[str, Any] = {}              # session_id -> active agent bound by WebUI/CLI bridge
 _state_lock = threading.Lock()
+_health_store: HealthStore | None = None
+
+
+def _get_health_store() -> HealthStore:
+    global _health_store
+    if _health_store is None:
+        _health_store = HealthStore(_get_hermes_home() / "model-router" / "state.db")
+    return _health_store
 
 def get_last_tier(session_id: str) -> int:
     with _state_lock:
@@ -760,6 +770,51 @@ def on_pre_llm_call(
         platform=platform,
         apply_live=True,
     )
+
+
+# ---------------------------------------------------------------------------
+# Hook: api_request_error (availability failover, never capability escalation)
+# ---------------------------------------------------------------------------
+
+def on_api_request_error(
+    *,
+    session_id: str = "",
+    provider: str = "",
+    model: str = "",
+    status_code: int | None = None,
+    retry_after: int | None = None,
+    **kwargs: Any,
+) -> None:
+    """Record provider failure and preselect the next same-tier candidate."""
+    if not session_id or is_session_pinned(session_id):
+        return
+    import time
+
+    failure = classify_failure(status_code=status_code, retry_after_seconds=retry_after)
+    _get_health_store().record_failure(f"{provider}:{model}", failure, now=time.time())
+    tier = get_last_tier(session_id)
+    candidates = TIERS.get(tier, {}).get("candidates", [])
+    agent = _get_live_agent(session_id)
+    if agent is None:
+        return
+    for candidate in candidates:
+        if candidate.get("provider") == provider and candidate.get("model") == model:
+            continue
+        if not candidate.get("provider") or not candidate.get("model"):
+            continue
+        health = _get_health_store().get(
+            f"{candidate['provider']}:{candidate['model']}", now=time.time()
+        )
+        if health.state.value != "healthy":
+            continue
+        apply_route(agent, HermesRouteTarget(
+            provider=candidate["provider"], model=candidate["model"],
+            base_url=candidate.get("base_url", ""),
+            api_mode=candidate.get("api_mode", ""),
+            reasoning=candidate.get("reasoning", TIERS[tier].get("reasoning")),
+        ))
+        logger.info("route: T%d → %s/%s [same-tier fallback]", tier, candidate["provider"], candidate["model"])
+        return
 
 
 # ---------------------------------------------------------------------------

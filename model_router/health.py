@@ -8,6 +8,7 @@ from .types import CandidateHealth, HealthState
 class HealthStore:
     def __init__(self, path: Path) -> None:
         self.path = path
+        self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as db:
             db.execute("PRAGMA journal_mode=WAL")
             db.execute("CREATE TABLE IF NOT EXISTS candidate_health (key TEXT PRIMARY KEY, state TEXT NOT NULL, failure_type TEXT, cooldown_until REAL)")
