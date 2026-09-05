@@ -155,6 +155,14 @@ def _normalize_router_config(raw: dict[str, Any] | None) -> dict[str, Any]:
         if not isinstance(override, dict):
             override = {}
         tier_defaults.update(override)
+        candidates = tier_defaults.get("candidates")
+        if candidates is not None:
+            if not isinstance(candidates, list) or not candidates:
+                raise ValueError(f"tiers.{tier_num}.candidates must be a non-empty list")
+            primary = candidates[0]
+            if not isinstance(primary, dict) or not primary.get("model"):
+                raise ValueError(f"tiers.{tier_num}.candidates[0] needs model")
+            tier_defaults["model"] = primary["model"]
         normalized_tiers[tier_num] = tier_defaults
     merged["tiers"] = normalized_tiers
     return merged
@@ -170,6 +178,7 @@ def _apply_router_config(config: dict[str, Any]) -> None:
             "provider": meta.get("provider", ""),
             "base_url": meta.get("base_url", ""),
             "api_mode": meta.get("api_mode", ""),
+            "candidates": meta.get("candidates", []),
             "reasoning": meta.get("reasoning"),
             "label": meta.get("label", f"T{tier_num}"),
             "emoji": meta.get("emoji", ""),
