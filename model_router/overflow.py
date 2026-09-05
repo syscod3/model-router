@@ -18,6 +18,8 @@ def resolve_overflow(
     remaining_budget_usd: float,
 ) -> RoutingDecision | None:
     """Select the first healthy fixed-cost PAYG candidate within budget."""
+    if not isfinite(remaining_budget_usd) or remaining_budget_usd < 0:
+        return None
     for candidate in tier.candidates:
         candidate_health = health.get(candidate.health_key)
         if (

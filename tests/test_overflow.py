@@ -77,6 +77,20 @@ def test_overflow_skips_non_finite_costs(cost):
     assert resolve_overflow(tier, set(), {}, remaining_budget_usd=1.0) is None
 
 
+@pytest.mark.parametrize("remaining_budget_usd", [float("nan"), float("inf"), float("-inf")])
+def test_overflow_skips_non_finite_remaining_budget(remaining_budget_usd):
+    tier = Tier(
+        number=2,
+        label="Default",
+        reasoning=None,
+        candidates=(
+            Candidate(id="payg", provider="openrouter", model="fixed", paid=True, estimated_cost_usd=0.03),
+        ),
+    )
+
+    assert resolve_overflow(tier, set(), {}, remaining_budget_usd=remaining_budget_usd) is None
+
+
 def test_daily_budget_reservation_is_shared_and_cannot_exceed_cap(tmp_path):
     store = HealthStore(tmp_path / "state.db")
 
