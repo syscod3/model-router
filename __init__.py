@@ -30,6 +30,8 @@ from typing import Any
 
 import yaml
 
+from integrations.hermes import HermesRouteTarget, apply_route
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -165,6 +167,9 @@ def _apply_router_config(config: dict[str, Any]) -> None:
     TIERS = {
         tier_num: {
             "model": meta["model"],
+            "provider": meta.get("provider", ""),
+            "base_url": meta.get("base_url", ""),
+            "api_mode": meta.get("api_mode", ""),
             "reasoning": meta.get("reasoning"),
             "label": meta.get("label", f"T{tier_num}"),
             "emoji": meta.get("emoji", ""),
@@ -672,13 +677,26 @@ def _apply_tier(session_id: str, target_tier: int, current_model: str, source: s
         if agent is None:
             return
 
-        old_model   = agent.model
-        agent.model = target_model
-
-        if target_reasoning:
-            agent.reasoning_config = {"effort": target_reasoning}
+        old_model = agent.model
+        target_provider = TIERS[target_tier].get("provider")
+        if target_provider:
+            apply_route(
+                agent,
+                HermesRouteTarget(
+                    provider=target_provider,
+                    model=target_model,
+                    base_url=TIERS[target_tier].get("base_url", ""),
+                    api_mode=TIERS[target_tier].get("api_mode", ""),
+                    reasoning=target_reasoning,
+                ),
+            )
         else:
-            agent.reasoning_config = None
+            # Legacy ``model: provider/model`` configuration retains its old
+            # same-provider behavior until it is migrated to candidates.
+            agent.model = target_model
+            agent.reasoning_config = (
+                {"effort": target_reasoning} if target_reasoning else None
+            )
 
         _record_router_set(session_id)
 
