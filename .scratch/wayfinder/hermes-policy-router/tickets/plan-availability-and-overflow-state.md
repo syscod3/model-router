@@ -3,7 +3,7 @@ title: Plan shared availability state and fixed overflow
 labels: [wayfinder:grilling]
 parent: ../map.md
 status: open
-assignee: unassigned
+assignee: hermes-agent
 blocked_by: []
 ---
 
